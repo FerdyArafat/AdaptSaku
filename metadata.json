@@ -1,0 +1,6 @@
+{
+  "name": "AdaptSaku",
+  "description": "Perencana keuangan adaptif yang cerdas, menyesuaikan alokasi pengeluaran berdasarkan pendapatan dan tujuan finansial Anda dengan bimbingan kecerdasan buatan (AI).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

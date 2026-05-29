@@ -1,0 +1,163 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+    
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { 
+      return request.auth != null && request.auth.token.email_verified == true; 
+    }
+
+    // Role helpers
+    function isOrgMember(orgId) { 
+      let org = get(/databases/$(database)/documents/organizations/$(orgId));
+      return org != null && request.auth.uid in org.data.memberIds;
+    }
+    
+    function getOrgRole(orgId) { 
+      // fallback to owner if they are ownerId
+      let org = get(/databases/$(database)/documents/organizations/$(orgId));
+      return org.data.ownerId == request.auth.uid ? 'owner' : 'member'; 
+    }
+
+    // --- Validation Helpers ---
+
+    function isValidOrganization(data) {
+      return data.keys().hasAll(['name', 'ownerId', 'memberIds']) &&
+             data.keys().size() >= 3 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.ownerId == request.auth.uid &&
+             data.memberIds is list && data.memberIds.size() > 0 && data.memberIds.size() <= 20 &&
+             data.memberIds[0] is string;
+    }
+
+    function isValidMember(data, memberId) {
+      return data.keys().hasAll(['userId', 'role']) &&
+             data.keys().size() >= 2 &&
+             data.userId == memberId && 
+             data.role in ['owner', 'member'];
+    }
+
+    function isValidIncome(data) {
+      return data.keys().hasAll(['source', 'amount', 'category', 'date', 'createdBy']) &&
+             data.source is string && data.source.size() > 0 && data.source.size() <= 100 &&
+             data.amount is number &&
+             data.category is string && data.category.size() <= 50 &&
+             data.date is string && data.date.size() <= 50 &&
+             data.createdBy == request.auth.uid;
+    }
+    
+    function isValidIncomeUpdate(data) {
+      return data.source is string && data.source.size() > 0 && data.source.size() <= 100 &&
+             data.amount is number &&
+             data.category is string && data.category.size() <= 50 &&
+             data.date is string && data.date.size() <= 50;
+    }
+
+    function isValidExpense(data) {
+      return data.keys().hasAll(['title', 'amount', 'category', 'subcategory', 'date', 'createdBy']) &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 100 &&
+             data.amount is number &&
+             data.category is string && data.category.size() <= 50 &&
+             data.subcategory is string && data.subcategory.size() <= 50 &&
+             data.date is string && data.date.size() <= 50 &&
+             data.createdBy == request.auth.uid;
+    }
+    
+    function isValidExpenseUpdate(data) {
+      return data.title is string && data.title.size() > 0 && data.title.size() <= 100 &&
+             data.amount is number &&
+             data.category is string && data.category.size() <= 50 &&
+             data.subcategory is string && data.subcategory.size() <= 50 &&
+             data.date is string && data.date.size() <= 50;
+    }
+
+    function isValidGoal(data) {
+      return data.keys().hasAll(['name', 'targetAmount', 'currentAmount', 'targetDate', 'priority', 'createdBy']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.targetAmount is number &&
+             data.currentAmount is number &&
+             data.targetDate is string && data.targetDate.size() <= 50 &&
+             data.priority is string && data.priority.size() <= 10 &&
+             data.createdBy == request.auth.uid;
+    }
+    
+    function isValidGoalUpdate(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.targetAmount is number &&
+             data.currentAmount is number &&
+             data.targetDate is string && data.targetDate.size() <= 50 &&
+             data.priority is string && data.priority.size() <= 10;
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == userId && incoming().keys().hasAll(['customId']) && incoming().customId is string && incoming().customId.size() >= 3 && incoming().customId.size() <= 20;
+      allow update: if isSignedIn() && request.auth.uid == userId && incoming().keys().hasAll(['customId']) && incoming().customId is string && incoming().customId.size() >= 3 && incoming().customId.size() <= 20;
+    }
+
+    // --- match rules ---
+
+    match /organizations/{orgId} {
+      allow get: if isSignedIn() && isValidId(orgId) && (request.auth.uid in existing().memberIds);
+      allow list: if isSignedIn() && (request.auth.uid in resource.data.memberIds);
+      allow create: if isSignedIn() && isValidId(orgId) && isValidOrganization(incoming());
+      allow update: if isSignedIn() && isValidId(orgId) && (request.auth.uid in existing().memberIds) && 
+                    // only owner can update, keeping ownerId immutable
+                    existing().ownerId == request.auth.uid &&
+                    incoming().ownerId == existing().ownerId &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['name', 'memberIds']) &&
+                    incoming().name is string && incoming().name.size() <= 100 &&
+                    incoming().memberIds is list && incoming().memberIds.size() <= 20 && incoming().memberIds[0] is string;
+
+      match /members/{memberId} {
+        allow get: if isSignedIn() && isValidId(orgId) && isValidId(memberId) && isOrgMember(orgId);
+        allow list: if isSignedIn() && isValidId(orgId) && isOrgMember(orgId);
+        allow create: if isSignedIn() && isValidId(orgId) && isValidId(memberId) &&
+                      (memberId == request.auth.uid || getOrgRole(orgId) == 'owner' || get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerId == request.auth.uid) &&
+                      isValidMember(incoming(), memberId);
+        allow update: if isSignedIn() && isValidId(orgId) && isValidId(memberId) && 
+                      getOrgRole(orgId) == 'owner' && // only owner can update member roles
+                      incoming().diff(existing()).affectedKeys().hasOnly(['role']) &&
+                      incoming().role in ['owner', 'member'];
+        allow delete: if isSignedIn() && isValidId(orgId) && isValidId(memberId) &&
+                      (memberId == request.auth.uid || getOrgRole(orgId) == 'owner'); // can delete self or owner deletes others
+      }
+
+      match /incomes/{incomeId} {
+        allow get: if isSignedIn() && isValidId(orgId) && isValidId(incomeId) && isOrgMember(orgId);
+        allow list: if isSignedIn() && isValidId(orgId) && isOrgMember(orgId);
+        allow create: if isSignedIn() && isValidId(orgId) && isValidId(incomeId) && isOrgMember(orgId) && isValidIncome(incoming());
+        allow update: if isSignedIn() && isValidId(orgId) && isValidId(incomeId) && isOrgMember(orgId) && 
+                      isValidIncomeUpdate(incoming()) && incoming().createdBy == existing().createdBy;
+        allow delete: if isSignedIn() && isValidId(orgId) && isValidId(incomeId) && isOrgMember(orgId);
+      }
+
+      match /expenses/{expenseId} {
+        allow get: if isSignedIn() && isValidId(orgId) && isValidId(expenseId) && isOrgMember(orgId);
+        allow list: if isSignedIn() && isValidId(orgId) && isOrgMember(orgId);
+        allow create: if isSignedIn() && isValidId(orgId) && isValidId(expenseId) && isOrgMember(orgId) && isValidExpense(incoming());
+        allow update: if isSignedIn() && isValidId(orgId) && isValidId(expenseId) && isOrgMember(orgId) && 
+                      isValidExpenseUpdate(incoming()) && incoming().createdBy == existing().createdBy;
+        allow delete: if isSignedIn() && isValidId(orgId) && isValidId(expenseId) && isOrgMember(orgId);
+      }
+
+      match /goals/{goalId} {
+        allow get: if isSignedIn() && isValidId(orgId) && isValidId(goalId) && isOrgMember(orgId);
+        allow list: if isSignedIn() && isValidId(orgId) && isOrgMember(orgId);
+        allow create: if isSignedIn() && isValidId(orgId) && isValidId(goalId) && isOrgMember(orgId) && isValidGoal(incoming());
+        allow update: if isSignedIn() && isValidId(orgId) && isValidId(goalId) && isOrgMember(orgId) && 
+                      isValidGoalUpdate(incoming()) && incoming().createdBy == existing().createdBy;
+        allow delete: if isSignedIn() && isValidId(orgId) && isValidId(goalId) && isOrgMember(orgId);
+      }
+    }
+  }
+}

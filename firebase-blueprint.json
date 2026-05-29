@@ -1,0 +1,90 @@
+{
+  "entities": {
+    "Organization": {
+      "title": "Organization",
+      "description": "Represents an organization sharing financial records",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Organization name" },
+        "ownerId": { "type": "string", "description": "Creator of the organization" },
+        "memberIds": { "type": "array", "description": "List of user UIDs for querying" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["name", "ownerId", "memberIds"]
+    },
+    "Member": {
+      "title": "Member",
+      "description": "Member of an organization",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "role": { "type": "string", "enum": ["owner", "member"] }
+      },
+      "required": ["userId", "role"]
+    },
+    "Income": {
+      "title": "Income",
+      "description": "Income record",
+      "type": "object",
+      "properties": {
+        "source": { "type": "string" },
+        "amount": { "type": "number" },
+        "period": { "type": "string" },
+        "category": { "type": "string" },
+        "date": { "type": "string" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["source", "amount", "category", "date", "createdBy"]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "Expense record",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "amount": { "type": "number" },
+        "category": { "type": "string" },
+        "subcategory": { "type": "string" },
+        "date": { "type": "string" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["title", "amount", "category", "subcategory", "date", "createdBy"]
+    },
+    "Goal": {
+      "title": "Goal",
+      "description": "Financial goal",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "targetAmount": { "type": "number" },
+        "currentAmount": { "type": "number" },
+        "targetDate": { "type": "string" },
+        "priority": { "type": "string" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["name", "targetAmount", "currentAmount"]
+    }
+  },
+  "firestore": {
+    "organizations/{orgId}": {
+      "schema": { "$ref": "#/entities/Organization" },
+      "description": "Organizations"
+    },
+    "organizations/{orgId}/members/{memberId}": {
+      "schema": { "$ref": "#/entities/Member" },
+      "description": "Members"
+    },
+    "organizations/{orgId}/incomes/{incomeId}": {
+      "schema": { "$ref": "#/entities/Income" },
+      "description": "Incomes"
+    },
+    "organizations/{orgId}/expenses/{expenseId}": {
+      "schema": { "$ref": "#/entities/Expense" },
+      "description": "Expenses"
+    },
+    "organizations/{orgId}/goals/{goalId}": {
+      "schema": { "$ref": "#/entities/Goal" },
+      "description": "Goals"
+    }
+  }
+}
